@@ -1,0 +1,170 @@
+---
+title: "R Notebook"
+output:
+  html_notebook: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library(glmnet) 
+library(boot) 
+library(leaps) 
+hp<- read.csv("C:/Users/Yueru/Desktop/UMD/Fall 2020/STAT 426/HW 7/hp.csv",header=T,fileEncoding="UTF-8-BOM")
+
+####### Pre-processing data and features #######
+
+fix(hp)  # pre-procesing the data
+hp<-hp[,-1] # The first column of the data is simply indices - they may be dropped
+nv<-dim(hp)[2] # to see how many cols remain
+nv # 80
+
+# a list of missing values 
+na.hp.v<-rep(nv) 
+for (i in 1:nv) { 
+  na.hp.v[i]<-sum(is.na(hp[,i])) 
+} 
+
+data.frame(colnames(hp),na.hp.v)
+# keep only variables with fewer than 82 missing cases
+hp<-hp[,na.hp.v < 82]
+nv<-dim(hp)[2] # Adjust the number of variables
+# nv # 74
+
+# here's a somewhat lengthy list of the (remaining) variables, and how many levels  / values each of them takes
+uq.hp.v<-rep(0,nv) 
+for (i in 1:nv) { 
+  uq.hp.v[i]<-length(unique(hp[,i])) 
+  } 
+data.frame(colnames(hp),uq.hp.v) 
+
+# Three variables (Street , Utilities , and CentralAir) take on only two values
+summary(hp[,uq.hp.v==2]) 
+hp<-hp[,-c(4,7)] # Street currently occupies the 4th column; Utilities the 7th
+nv<-dim(hp)[2] 
+nv# 72
+#names(hp) # list of remaining variables
+```
+
+```{r}
+# remove rows of missing values
+set.seed(840)
+hp<-na.omit(hp) # delete rows with NA values
+n<-dim(hp)[1]
+#n #1338
+
+# split into train and test set
+train_ind = sample(1:n,size =2/3*n,replace=F) 
+train = hp[train_ind,]
+test = hp[-train_ind,]
+```
+
+``` {r}
+# create model matrix
+x=model.matrix(SalePrice~.,hp)[,-72]  # this shows there are 224 variables
+y=hp$SalePrice
+y_train=train$SalePrice
+y_test=test$SalePrice
+```
+
+```{r}
+# lasso regression with 10-fold CV
+grid<-2^seq(-20,20) 
+lasso.fit<-glmnet(x[train_ind,],y_train,alpha=1,lambda=grid)
+cv.out = cv.glmnet(x[train_ind,], y_train, alpha = 1)
+
+# Draw plot of training MSE as a function of lambda
+plot(cv.out) 
+```
+
+```{r}
+# cross-validated choice of lamda
+bestlam = cv.out$lambda.min # Select lamda that minimizes training MSE
+bestlam
+```
+
+
+
+
+
+```{r}
+# Set up 
+D<- read.csv("C:/Users/Yueru/Desktop/UMD/Fall 2020/STAT 426/HW 8/diabetes.csv",header=T,fileEncoding="UTF-8-BOM") 
+D$Diabetes<-as.factor(D$Diabetes) 
+DP<-D[,-8] 
+```
+
+```{r}
+#PC  
+prDP.out<-prcomp(DP,scale=T) 
+
+# Setting up to run logistic on principal compenents 
+DPC<-data.frame(prDP.out$x,D$Diabetes) 
+names(DPC)[8]<-"Diabetes" 
+
+# Logistic Regression on all principal components 
+lr.pc.fit<-glm(Diabetes~.,family=binomial,data=DPC) 
+summary(lr.pc.fit) 
+lr.pc.pr<-rep("LO",dim(D)[1]) 
+lr.pc.pr[predict(lr.pc.fit)>0]<-"HI" 
+(t3<-table(lr.pc.pr,DPC$Diabetes)) 
+sum(diag(t3))/sum(t3) 
+
+# Logistic Regression on three principal components. 
+lr.pc.r.fit<-glm(Diabetes~PC1+PC2+PC6,family=binomial,data=DPC) 
+summary(lr.pc.r.fit) 
+lr.pc.r.pr<-rep("LO",dim(D)[1]) 
+lr.pc.r.pr[predict(lr.pc.r.fit)>0]<-"HI" 
+(t4<-table(lr.pc.r.pr,DPC$Diabetes)) 
+sum(diag(t4))/sum(t4) 
+
+# Logistic Regression on first two principal components. 
+lr.pc.fit1<-glm(Diabetes~PC1+PC2,family=binomial,data=DPC) 
+summary(lr.pc.fit1) 
+lr.pc.pr1<-rep("LO",dim(D)[1]) 
+lr.pc.pr1[predict(lr.pc.fit1)>0]<-"HI" 
+(t5<-table(lr.pc.pr1,DPC$Diabetes)) 
+sum(diag(t5))/sum(t5)
+
+# Logistic Regression on first two principal components and quadratic terms
+lr.pc.fit2<-glm(Diabetes~poly(PC1,2,raw=T)+poly(PC2,2,raw=T),family=binomial,data=DPC) 
+summary(lr.pc.fit2) 
+lr.pc.pr2<-rep("LO",dim(D)[1]) 
+lr.pc.pr2[predict(lr.pc.fit2)>0]<-"HI" 
+(t6<-table(lr.pc.pr2,DPC$Diabetes)) 
+sum(diag(t6))/sum(t6)
+
+# Testing equivalence of models fit1 and fit2
+anova(lr.pc.fit1,lr.pc.fit2,test="Chisq") 
+```
+
+```{r}
+# Plotting first 2 principal components along with Diabetes 
+pc1<-prDP.out$x[,1] 
+pc2<-prDP.out$x[,2] 
+plot(pc1,pc2,type="n",bty="n",xlab="1st Principal Component",ylab="2nd Principal Component") 
+points(pc1[D$Diabetes=="NO"], pc2[D$Diabetes=="NO"],cex=0.5,col="blue") 
+points(pc1[D$Diabetes=="YES"],pc2[D$Diabetes=="YES"], cex=0.5,col="red") 
+legend("topleft",legend=c("Diabetes: NO","Diabetes: YES","Linear","Quadratic"),
+       col=c("blue","red","purple","green"),
+       bty="n",pch=c(1,1,NA,NA),
+       text.col=c("blue","red","purple","green"),
+       lty=c(NA,NA,2,2),
+       lwd=c(NA,NA,2,2)) 
+
+#add boundaries
+x1<-seq(min(DPC$PC1),max(DPC$PC1),length=1000) 
+y1<--2.17626*x1+2.062375
+lines(x1,y1,lty=2,lwd=2,col="purple") 
+#qudratic boundary
+x2<-seq(min(DPC$PC1),max(DPC$PC1),length=1000) 
+y2<-(54547-sqrt(380413401+6758215360*x2 -974507368*x2^2))/29404
+lines(x2,y2,lty=2,lwd=2,col="green") 
+y3<-(54547 + sqrt(380413401 + 6758215360*x2 - 974507368*x2^2))/29404
+lines(x2,y3,lty=2,lwd=2,col="green")
+```
